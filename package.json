@@ -1,0 +1,56 @@
+{
+  "name": "apex-agent",
+  "version": "0.1.0",
+  "description": "Apex Agent — 努力向人一样工作 / Work like a human",
+  "type": "module",
+  "bin": {
+    "apex": "./bin/apex"
+  },
+  "scripts": {
+    "tui": "tsx src/cli.ts",
+    "build": "npm run clean && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "clean": "rm -rf dist",
+    "install-local": "node scripts/install.mjs",
+    "test": "tsc -p tsconfig.json --noEmit && tsx tests/test-organs.ts && tsx tests/test-macro.ts && tsx tests/test-life.ts && tsx tests/test-nerve.ts && tsx tests/test-trust.ts && tsx tests/test-approval.ts && tsx tests/test-verdict.ts && tsx tests/test-parallel.ts && tsx tests/test-output-schema.ts && tsx tests/test-cron-policy.ts && tsx tests/test-executions.ts && tsx tests/test-cron-monitor.ts && tsx tests/test-turn-lease.ts && tsx tests/test-align.ts && tsx tests/test-migrate.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.56",
+    "@ai-sdk/openai": "^4.0.69",
+    "@alcalzone/ansi-tokenize": "^0.1.3",
+    "@larksuiteoapi/node-sdk": "^1.74.0",
+    "ai": "^7.0.105",
+    "auto-bind": "^5.0.1",
+    "bidi-js": "^1.1.0",
+    "chalk": "^6.0.0",
+    "cli-boxes": "^3.0.0",
+    "code-excerpt": "^4.0.0",
+    "cordis": "^4.0.0-rc.10",
+    "dotenv": "^17.4.2",
+    "emoji-regex": "^10.6.0",
+    "get-east-asian-width": "^1.6.0",
+    "indent-string": "^5.0.0",
+    "lodash-es": "^4.18.1",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "pino": "^10.3.1",
+    "pino-roll": "^4.0.0",
+    "react": "^19.2.8",
+    "react-reconciler": "^0.33.0",
+    "semver": "^7.8.5",
+    "signal-exit": "^4.1.0",
+    "stack-utils": "^2.0.6",
+    "strip-ansi": "^7.2.0",
+    "type-fest": "^4.41.0",
+    "usehooks-ts": "^3.1.1",
+    "wrap-ansi": "^9.0.2",
+    "yaml": "^2.7.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

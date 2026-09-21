@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 1. Generate the changelog (conventional commits → markdown) to stdout.
+      #    --no-output keeps it out of a file so we can prepend the install guide.
+      - name: Generate changelog
+        run: npx changelogen@latest --no-output > /tmp/changelog.md
+
+      # 2. Assemble the release body: install guide + feature summary + changelog.
+      - name: Assemble release body
+        run: node scripts/release-body.mjs < /tmp/changelog.md > /tmp/release-body.md
+
+      # 3. Create the GitHub Release.
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file /tmp/release-body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# backup / scratch artifacts
+skills.backup.*/
+diag-*.ts
+*.tmp
+
+# local credentials (never commit)
+.env
+.env.local
