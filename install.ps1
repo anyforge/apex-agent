@@ -5,7 +5,7 @@
 # Windows one-shot installer: run `.\install.ps1` (or double-click install.cmd).
 #
 # 流程 / Flow（对齐 install.sh）:
-#   1. 检测 Node.js / npm（>= 20）
+#   1. 检测 Node.js / npm（>= 22）
 #   2. npm install + npm run build
 #   3. 安装到 %USERPROFILE%\.apex-agent\
 #   4. 把 app\bin 加入用户 PATH
@@ -51,14 +51,15 @@ $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
     Write-Color $RED "✗ "
     Write-Host "未找到 Node.js，请先安装 / Node.js not found. Install it first:"
-    Write-Host "    https://nodejs.org/  (Node.js >= 20)"
+    Write-Host "    https://nodejs.org/  (Node.js >= 22)"
     exit 1
 }
 
 $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
-if ($nodeMajor -lt 20) {
+if ($nodeMajor -lt 22) {
     Write-Color $RED "✗ "
-    Write-Host "需要 Node.js >= 20（当前 $(node -v)）/ Node.js >= 20 required."
+    Write-Host "需要 Node.js >= 22（当前 $(node -v)）/ Node.js >= 22 required."
+    Write-Host "    node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）。"
     exit 1
 }
 Write-Color $GREEN "✓ "

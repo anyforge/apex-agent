@@ -27,7 +27,7 @@ Apex Agent is a self-hosted, soft/hard-separated AI agent framework. A fixed **t
 
 ## Requirements
 
-- **Node.js ≥ 20** (with npm)
+- **Node.js ≥ 22** (with npm)
 
 ---
 

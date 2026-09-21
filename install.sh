@@ -6,7 +6,7 @@
 # One-shot installer: clone/download the source, then run `bash install.sh`.
 #
 # 流程 / Flow:
-#   1. 检测 Node.js / npm（>= 20）/ Check Node.js / npm (>= 20)
+#   1. 检测 Node.js / npm（>= 22）/ Check Node.js / npm (>= 22)
 #   2. npm install + npm run build（编译到 dist/）/ install deps + build
 #   3. 安装到 ~/.apex-agent/（dist + node_modules + skills + bin）/ install into ~/.apex-agent/
 #   4. symlink apex → ~/.local/bin/apex / symlink the CLI
@@ -45,14 +45,15 @@ echo -e "${CYAN}→${NC} 检测 Node.js... / Checking Node.js..."
 
 if ! command -v node &> /dev/null; then
     echo -e "${RED}✗${NC} 未找到 Node.js，请先安装 / Node.js not found. Install it first:"
-    echo "    https://nodejs.org/  (Node.js >= 20)"
+    echo "    https://nodejs.org/  (Node.js >= 22)"
     echo "    或 / or: brew install node"
     exit 1
 fi
 
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "0")
-if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo -e "${RED}✗${NC} 需要 Node.js >= 20（当前 v$(node -v)）/ Node.js >= 20 required (found v$(node -v))."
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo -e "${RED}✗${NC} 需要 Node.js >= 22（当前 v$(node -v)）/ Node.js >= 22 required (found v$(node -v))."
+    echo "    node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）。"
     exit 1
 fi
 echo -e "${GREEN}✓${NC} 找到 Node.js $(node -v) / Node.js $(node -v) found"

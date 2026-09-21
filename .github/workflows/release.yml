@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # 1. Generate the changelog (conventional commits → markdown) to stdout.
       #    --no-output keeps it out of a file so we can prepend the install guide.

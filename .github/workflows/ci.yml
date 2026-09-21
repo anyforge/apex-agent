@@ -13,8 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         # Windows excluded for now: tests hardcode /tmp/ paths (os.tmpdir() needed first).
+        # Node 22+ required: node:sqlite (sessions/approvals/cron/gateway ledgers) needs it.
+        # GitHub Actions defaults to Node 24 (Node 20 is deprecated).
         os: [ubuntu-latest, macos-latest]
-        node: [20]
+        node: [24]
 
     steps:
       - uses: actions/checkout@v4

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Node.js ≥ 20** (with npm)
+- **Node.js ≥ 22** (with npm)
 - macOS / Linux / Windows
 
 ## One-shot install
@@ -25,7 +25,7 @@ bash install.sh
 The installer runs these steps in order:
 
 ```
-1. Check Node.js / npm (>= 20)
+1. Check Node.js / npm (>= 22)
 2. npm install          (quiet on success, error visible on failure)
 3. npm run build        (tsc + prompt assets)
 4. Install into ~/.apex-agent/  (dist + node_modules + skills + bin)

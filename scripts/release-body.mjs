@@ -8,7 +8,7 @@ const changelog = readFileSync(0, "utf-8").trim();
 
 const header = `## 安装 / Install
 
-**环境要求 / Requirements:** Node.js ≥ 20
+**环境要求 / Requirements:** Node.js ≥ 22
 
 \`\`\`bash
 # macOS / Linux
