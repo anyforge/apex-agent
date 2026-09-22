@@ -1051,6 +1051,17 @@ function installShutdownHandler(app: App): void {
 
 // ---- main ------------------------------------------------------------------
 
+// Detect "output pipe gone" errors (EIO: terminal closed / stdout disconnected; EPIPE: broken
+// pipe on write). These mean there is nowhere left to write — the correct response is a silent
+// exit, not error logging (which would re-trigger the same write failure and spin forever).
+function isBrokenPipeError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "EIO" || code === "EPIPE" || code === "ERR_STREAM_DESTROYED";
+  }
+  return false;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const cmd = args[0];
@@ -1062,19 +1073,39 @@ async function main(): Promise<void> {
   // these catch the "leaked rejection" class that would otherwise hit Node's default handler and
   // print a stack trace before dying.
   process.on("uncaughtException", (err) => {
+    // If the output pipe is gone (EIO/EPIPE: the terminal window was closed, or stdout was
+    // disconnected), there is nowhere left to write — logging the error would just re-trigger the
+    // same write failure and spin forever (the "write EIO" log-flood). Exit silently instead.
+    if (isBrokenPipeError(err)) {
+      process.exit(0);
+    }
     try {
-      console.error(`[uncaughtException] ${err?.stack ?? err}`);
+      // Use log.raw (the un-tee'd console) rather than console.*, which installLogger has
+      // re-wired to write BOTH to stdout AND the log file — on a broken stdout that tee re-throws
+      // the same EIO and loops.
+      log.raw.error(`[uncaughtException] ${err?.stack ?? err}`);
     } catch {
       /* log failure must not re-throw */
     }
   });
   process.on("unhandledRejection", (reason) => {
+    if (isBrokenPipeError(reason)) {
+      process.exit(0);
+    }
     try {
-      console.error(`[unhandledRejection] ${reason instanceof Error ? reason.stack : String(reason)}`);
+      log.raw.error(`[unhandledRejection] ${reason instanceof Error ? reason.stack : String(reason)}`);
     } catch {
       /* log failure must not re-throw */
     }
   });
+
+  // Terminal-gone signals: SIGHUP (terminal window closed) and SIGPIPE (write to a closed pipe)
+  // mean there is no one left to talk to. Exit quietly — the default Node behaviour for SIGHUP is
+  // already exit, but ink's renderer / AlternateScreen can keep the loop alive; SIGPIPE is IGNORED
+  // by Node by default, which is exactly what leaves a zombie TUI writing EIO errors forever.
+  // Handle both so a closed terminal never orphans a CPU-burning process.
+  process.on("SIGHUP", () => process.exit(0));
+  process.on("SIGPIPE", () => process.exit(0));
 
   // Ensure the config file exists first (it only writes, prints nothing), then capture every
   // console.* call into the log dir (daily + size rotation + age prune) with the configured

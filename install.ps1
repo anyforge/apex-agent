@@ -1,32 +1,31 @@
 # ============================================================================
-# Apex Agent Windows Setup Script
+# Apex Agent Windows Setup Script — 努力向人一样工作 / Work like a human
 # ============================================================================
 # Windows 一键安装脚本：下载源码后在 PowerShell 里运行 `.\install.ps1`（或双击 install.cmd）。
 # Windows one-shot installer: run `.\install.ps1` (or double-click install.cmd).
-#
-# 流程 / Flow（对齐 install.sh）:
-#   1. 检测 Node.js / npm（>= 22）
-#   2. npm install + npm run build
-#   3. 安装到 %USERPROFILE%\.apex-agent\
-#   4. 把 app\bin 加入用户 PATH
-#   5. 交互配置：大模型（必填）+ 飞书消息（可选）
-#   6. 凭据写 .env（绝不进 config.yaml）
 # ============================================================================
 
 $ErrorActionPreference = "Stop"
 
-# ---- Colors / 颜色 ----
-$GREEN = [ConsoleColor]::Green
-$YELLOW = [ConsoleColor]::Yellow
-$CYAN = [ConsoleColor]::Cyan
-$RED = [ConsoleColor]::Red
-
-function Write-Color([ConsoleColor]$color, [string]$text) {
-    $prev = [Console]::ForegroundColor
-    [Console]::ForegroundColor = $color
-    Write-Host $text -NoNewline
-    [Console]::ForegroundColor = $prev
+# Enable ANSI escape sequence support (RGB truecolor) on Windows console.
+if ($host.UI.SupportsVirtualTerminal -eq $false) {
+    try {
+        Add-Type -MemberDefinition '[DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetConsoleMode(IntPtr h, uint m); [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int d);' -Name Native -Namespace Win32
+        $h = [Win32.Native]::GetStdHandle(-11)
+        [Win32.Native]::SetConsoleMode($h, 0x7) | Out-Null
+    } catch {}
 }
+
+# ---- Colors (RGB truecolor, clack-style) ----------------------------------
+$ACCENT       = "$([char]27)[38;2;59;109;245m"     # blue
+$ACCENT_BRIGHT = "$([char]27)[38;2;108;92;231m"  # blue-purple
+$INFO         = "$([char]27)[38;2;91;140;245m"   # info blue
+$SUCCESS      = "$([char]27)[38;2;47;191;113m"   # green
+$WARN         = "$([char]27)[38;2;255;176;32m"   # amber
+$ERROR        = "$([char]27)[38;2;226;61;45m"    # red
+$MUTED        = "$([char]27)[38;2;139;127;119m"  # gray
+$BOLD         = "$([char]27)[1m"
+$NC           = "$([char]27)[0m"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
@@ -35,109 +34,102 @@ $ApexHome = Join-Path $HOME ".apex-agent"
 $ApexEnv = Join-Path $ApexHome ".env"
 $BinDir = Join-Path $ApexHome "app\bin"
 
-Write-Host ""
-Write-Color $CYAN "⚡ Apex Agent Setup"
-Write-Host " — 努力向人一样工作 / Work like a human"
-Write-Host ""
+# ---- clack-style helpers ---------------------------------------------------
+function clack_intro([string]$title) {
+    Write-Host ""
+    Write-Host "${ACCENT}┌${NC}  ${BOLD}${title}${NC}"
+    Write-Host "${ACCENT}│${NC}"
+}
+function clack_step([string]$msg) {
+    Write-Host "${ACCENT}│${NC}  ${msg}"
+}
+function clack_outro([string]$msg) {
+    Write-Host "${ACCENT}│${NC}"
+    Write-Host "${ACCENT}└${NC}  ${msg}"
+    Write-Host ""
+}
+
+clack_intro "Apex Agent Installer"
+clack_step "${MUTED}努力向人一样工作 · Work like a human${NC}"
 
 # ============================================================================
-# 1. Node.js / npm check / 检测 Node.js / npm
+# 1. Node.js / npm check
 # ============================================================================
 
-Write-Color $CYAN "→ "
-Write-Host "检测 Node.js... / Checking Node.js..."
+clack_step "${ACCENT}◆${NC} 检测 Node.js..."
 
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
-    Write-Color $RED "✗ "
-    Write-Host "未找到 Node.js，请先安装 / Node.js not found. Install it first:"
-    Write-Host "    https://nodejs.org/  (Node.js >= 22)"
+    Write-Host "${ERROR}◆${NC} 未找到 Node.js，请先安装："
+    Write-Host "   ${MUTED}https://nodejs.org/  (Node.js >= 22)${NC}"
     exit 1
 }
 
 $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
 if ($nodeMajor -lt 22) {
-    Write-Color $RED "✗ "
-    Write-Host "需要 Node.js >= 22（当前 $(node -v)）/ Node.js >= 22 required."
-    Write-Host "    node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）。"
+    Write-Host "${ERROR}◆${NC} 需要 Node.js >= 22（当前 $(node -v)）"
+    Write-Host "   ${MUTED}node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）${NC}"
     exit 1
 }
-Write-Color $GREEN "✓ "
-Write-Host "找到 Node.js $(node -v) / Node.js found"
+clack_step "${SUCCESS}◆${NC} Node.js $(node -v) 已就绪"
 
 $npm = Get-Command npm -ErrorAction SilentlyContinue
 if (-not $npm) {
-    Write-Color $RED "✗ "
-    Write-Host "未找到 npm（随 Node.js 一起安装）/ npm not found."
+    Write-Host "${ERROR}◆${NC} 未找到 npm（随 Node.js 一起安装）"
     exit 1
 }
-Write-Color $GREEN "✓ "
-Write-Host "找到 npm $(npm -v) / npm found"
+clack_step "${SUCCESS}◆${NC} npm $(npm -v) 已就绪"
 
 # ============================================================================
-# 2. Dependencies + build / 依赖 + 编译
+# 2. Dependencies + build
 # ============================================================================
 
-Write-Host ""
-Write-Color $CYAN "→ "
-Write-Host "安装依赖... / Installing dependencies..."
-# 成功时完全静默；失败时重跑显示真实报错。
+clack_step "${ACCENT}◆${NC} 安装依赖..."
 npm install --loglevel=error *> $null
 if ($LASTEXITCODE -ne 0) {
     npm install --loglevel=error
-    Write-Color $RED "✗ "
-    Write-Host "依赖安装失败（见上方 npm 报错）/ Dependency install failed."
+    Write-Host "${ERROR}◆${NC} 依赖安装失败（见上方 npm 报错）"
     exit 1
 }
-Write-Color $GREEN "✓ "
-Write-Host "依赖安装完成 / Dependencies installed"
+clack_step "${SUCCESS}◆${NC} 依赖安装完成"
 
-Write-Color $CYAN "→ "
-Write-Host "编译中... / Building..."
+clack_step "${ACCENT}◆${NC} 编译中..."
 npm run build --silent *> $null
 if ($LASTEXITCODE -ne 0) {
     npm run build --silent
-    Write-Color $RED "✗ "
-    Write-Host "编译失败，可手动运行 'npm run build' 看完整报错 / Build failed."
+    Write-Host "${ERROR}◆${NC} 编译失败，可手动运行 'npm run build' 看完整报错"
     exit 1
 }
-Write-Color $GREEN "✓ "
-Write-Host "编译完成 / Build complete"
+clack_step "${SUCCESS}◆${NC} 编译完成"
 
 # ============================================================================
-# 3. Install into %USERPROFILE%\.apex-agent\ / 安装
+# 3. Install into %USERPROFILE%\.apex-agent\
 # ============================================================================
 
-Write-Host ""
-Write-Color $CYAN "→ "
-Write-Host "安装到 $ApexHome ... / Installing into $ApexHome ..."
+clack_step "${ACCENT}◆${NC} 安装到 $ApexHome..."
 node scripts\install.mjs
 if ($LASTEXITCODE -ne 0) {
-    Write-Color $RED "✗ "
-    Write-Host "安装失败 / Install failed."
+    Write-Host "${ERROR}◆${NC} 安装失败"
     exit 1
 }
 
 # ============================================================================
-# 4. Add bin dir to user PATH / 加入 PATH
+# 4. Add bin dir to user PATH
 # ============================================================================
 
-Write-Color $CYAN "→ "
-Write-Host "设置 apex 命令... / Setting up apex command..."
+clack_step "${ACCENT}◆${NC} 设置 apex 命令..."
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$BinDir*") {
     $newPath = if ([string]::IsNullOrEmpty($userPath)) { $BinDir } else { "$userPath;$BinDir" }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-Color $GREEN "✓ "
-    Write-Host "已将 app\bin 加入用户 PATH / Added app\bin to user PATH"
+    clack_step "${SUCCESS}◆${NC} 已将 app\bin 加入用户 PATH"
 } else {
-    Write-Color $GREEN "✓ "
-    Write-Host "app\bin 已在 PATH 中 / app\bin already on PATH"
+    clack_step "${SUCCESS}◆${NC} app\bin 已在 PATH 中"
 }
 
 # ============================================================================
-# 5. Interactive configuration / 交互配置
+# 5. Interactive configuration
 # ============================================================================
 
 $ApexCmd = Join-Path $BinDir "apex.cmd"
@@ -146,58 +138,49 @@ New-Item -ItemType Directory -Force -Path $ApexHome | Out-Null
 if (-not (Test-Path $ApexEnv)) { New-Item -ItemType File -Path $ApexEnv -Force | Out-Null }
 
 Write-Host ""
-Write-Color $CYAN "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host ""
-Write-Color $CYAN "  配置大模型 / Configure the model"
-Write-Color $YELLOW "  (必需 / required)"
-Write-Host ""
-Write-Color $CYAN "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host ""
-Write-Host "  提供者 provider:  openai（OpenAI 兼容，含 DeepSeek/Qwen/GLM 等）| anthropic"
-Write-Host ""
+Write-Host "${ACCENT}┌${NC}  ${BOLD}配置大模型${NC}  ${WARN}(必需)${NC}"
+Write-Host "${ACCENT}│${NC}"
+Write-Host "${ACCENT}│${NC}  ${MUTED}provider: openai（OpenAI 兼容，含 DeepSeek/Qwen/GLM 等）| anthropic${NC}"
+Write-Host "${ACCENT}│${NC}"
 
-# --- provider / 提供者 ---
+# --- provider ---
 do {
-    $PROVIDER = Read-Host "  provider [openai]"
+    $PROVIDER = Read-Host "${ACCENT}│${NC}  ${MUTED}provider${NC} [openai]"
     if ([string]::IsNullOrWhiteSpace($PROVIDER)) { $PROVIDER = "openai" }
     if ($PROVIDER -ne "openai" -and $PROVIDER -ne "anthropic") {
-        Write-Color $RED "✗ "
-        Write-Host "请输入 openai 或 anthropic / enter openai or anthropic"
+        Write-Host "${WARN}│${NC}  请输入 openai 或 anthropic"
         $PROVIDER = ""
     }
 } while ([string]::IsNullOrEmpty($PROVIDER))
 
-# --- name / 名称 ---
-$PROVIDER_NAME = Read-Host "  提供者名称 providerName [default]"
+# --- name ---
+$PROVIDER_NAME = Read-Host "${ACCENT}│${NC}  ${MUTED}providerName${NC} [default]"
 if ([string]::IsNullOrWhiteSpace($PROVIDER_NAME)) { $PROVIDER_NAME = "default" }
 
 # --- baseUrl ---
 if ($PROVIDER -eq "openai") {
-    $BASE_URL = Read-Host "  baseUrl（OpenAI 兼容端点，如 https://api.deepseek.com/v1）"
+    $BASE_URL = Read-Host "${ACCENT}│${NC}  ${MUTED}baseUrl${NC}（如 https://api.deepseek.com/v1）"
 } else {
-    $BASE_URL = Read-Host "  baseUrl（留空 = 官方端点 / empty = official）"
+    $BASE_URL = Read-Host "${ACCENT}│${NC}  ${MUTED}baseUrl${NC}（留空 = 官方端点）"
 }
 
-# --- apiKey / API 密钥 ---
-$API_KEY = Read-Host "  apiKey（输入不回显 / hidden）" -AsSecureString
+# --- apiKey ---
+$API_KEY = Read-Host "${ACCENT}│${NC}  ${MUTED}apiKey${NC}（输入不回显）" -AsSecureString
 $API_KEY_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($API_KEY))
 if ([string]::IsNullOrWhiteSpace($API_KEY_PLAIN)) {
-    Write-Color $YELLOW "⚠ "
-    Write-Host "apiKey 为空，稍后可用环境变量补（OPENAI_API_KEY / ANTHROPIC_API_KEY）"
+    Write-Host "${WARN}│${NC}  apiKey 为空，稍后可用环境变量补（OPENAI_API_KEY / ANTHROPIC_API_KEY）"
 }
 
-# --- model / 模型 ---
+# --- model ---
 if ($PROVIDER -eq "openai") {
-    $MODEL = Read-Host "  模型 model [deepseek-chat]"
+    $MODEL = Read-Host "${ACCENT}│${NC}  ${MUTED}model${NC} [deepseek-chat]"
     if ([string]::IsNullOrWhiteSpace($MODEL)) { $MODEL = "deepseek-chat" }
 } else {
-    $MODEL = Read-Host "  模型 model [claude-sonnet-4-5]"
+    $MODEL = Read-Host "${ACCENT}│${NC}  ${MUTED}model${NC} [claude-sonnet-4-5]"
     if ([string]::IsNullOrWhiteSpace($MODEL)) { $MODEL = "claude-sonnet-4-5" }
 }
 
-Write-Host ""
-Write-Color $GREEN "✓ "
-Write-Host "大模型配置完成，正在写入... / Model config done, writing..."
+Write-Host "${ACCENT}└${NC}  ${SUCCESS}◆${NC} 模型配置完成，正在写入..."
 
 # write apiKey → .env (credential)
 if (-not [string]::IsNullOrWhiteSpace($API_KEY_PLAIN)) {
@@ -216,71 +199,62 @@ if (-not [string]::IsNullOrWhiteSpace($BASE_URL)) {
     & $ApexCmd config set model.baseUrl $BASE_URL | Out-Null
 }
 
-Write-Color $GREEN "✓ "
-Write-Host "模型已配置：$PROVIDER / $MODEL / Model configured"
+Write-Host "${SUCCESS}◆${NC} 模型已配置：$PROVIDER / $MODEL"
 
 # ============================================================================
-# 6. Feishu messaging (optional) / 飞书消息（可选）
+# 6. Feishu messaging (optional)
 # ============================================================================
 
 Write-Host ""
-Write-Color $CYAN "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host ""
-Write-Color $CYAN "  配置消息平台 / Configure messaging"
-Write-Color $YELLOW "  (可选 / optional)"
-Write-Host ""
-Write-Color $CYAN "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host ""
-Write-Host "  当前支持：飞书 Feishu（Lark）机器人 / Currently supports: Feishu (Lark) bot"
-Write-Host ""
+Write-Host "${ACCENT}┌${NC}  ${BOLD}配置消息平台${NC}  ${WARN}(可选)${NC}"
+Write-Host "${ACCENT}│${NC}"
+Write-Host "${ACCENT}│${NC}  ${MUTED}当前支持：飞书 Feishu（Lark）机器人${NC}"
+Write-Host "${ACCENT}│${NC}"
 
-$doFeishu = Read-Host "  是否配置飞书消息？/ Configure Feishu? [Y/n]"
+$doFeishu = Read-Host "${ACCENT}│${NC}  是否配置飞书消息？[Y/n]"
 if ($doFeishu -eq "" -or $doFeishu -match "^[Yy]") {
-    $FEISHU_APP_ID = Read-Host "  App ID"
-    $FEISHU_SECRET = Read-Host "  App Secret（输入不回显 / hidden）" -AsSecureString
+    $FEISHU_APP_ID = Read-Host "${ACCENT}│${NC}  ${MUTED}App ID${NC}"
+    $FEISHU_SECRET = Read-Host "${ACCENT}│${NC}  ${MUTED}App Secret${NC}（输入不回显）" -AsSecureString
     $FEISHU_SECRET_PLAIN = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($FEISHU_SECRET))
-    $FEISHU_DOMAIN = Read-Host "  domain [feishu]（feishu 国内 | lark 国际）"
+    $FEISHU_DOMAIN = Read-Host "${ACCENT}│${NC}  ${MUTED}domain${NC} [feishu]（feishu 国内 | lark 国际）"
     if ([string]::IsNullOrWhiteSpace($FEISHU_DOMAIN)) { $FEISHU_DOMAIN = "feishu" }
+    Write-Host "${ACCENT}└${NC}"
 
     if (-not [string]::IsNullOrWhiteSpace($FEISHU_APP_ID) -and -not [string]::IsNullOrWhiteSpace($FEISHU_SECRET_PLAIN)) {
         Add-Content -Path $ApexEnv -Value "FEISHU_APP_ID=$FEISHU_APP_ID"
         Add-Content -Path $ApexEnv -Value "FEISHU_APP_SECRET=$FEISHU_SECRET_PLAIN"
         & $ApexCmd config set gateway.feishu.enabled true | Out-Null
         & $ApexCmd config set gateway.feishu.domain $FEISHU_DOMAIN | Out-Null
-        Write-Color $GREEN "✓ "
-        Write-Host "飞书已配置（domain=$FEISHU_DOMAIN），凭据写入 .env / Feishu configured"
+        Write-Host "${SUCCESS}◆${NC} 飞书已配置（domain=$FEISHU_DOMAIN），凭据写入 .env"
     } else {
-        Write-Color $YELLOW "⚠ "
-        Write-Host "App ID/Secret 为空，飞书未启用 / App ID/Secret empty, Feishu not enabled"
+        Write-Host "${WARN}◆${NC} App ID/Secret 为空，飞书未启用"
     }
 } else {
-    Write-Color $YELLOW "⚠ "
-    Write-Host "跳过飞书配置 / Skipped Feishu"
+    Write-Host "${ACCENT}└${NC}"
+    Write-Host "${WARN}◆${NC} 跳过飞书配置"
 }
 
 # ============================================================================
-# 7. Done / 完成
+# 7. Done
 # ============================================================================
 
+clack_outro "${SUCCESS}◆${NC} 安装完成"
+
+Write-Host "${BOLD}下一步：${NC}"
 Write-Host ""
-Write-Color $GREEN "✓ 安装完成！/ Setup complete!"
+Write-Host "  ${MUTED}1.${NC} 打开一个新的终端（让 PATH 生效）："
 Write-Host ""
-Write-Host "下一步 / Next steps:"
+Write-Host "  ${MUTED}2.${NC} 开始对话："
+Write-Host "     ${INFO}apex${NC}"
 Write-Host ""
-Write-Host "  1. 打开一个新的终端（让 PATH 生效）/ Open a NEW terminal (so PATH applies):"
+Write-Host "  ${MUTED}3.${NC} 启动网关（飞书长连接 + 定时任务）："
+Write-Host "     ${INFO}apex gateway run${NC}"
 Write-Host ""
-Write-Host "  2. 开始对话 / Start chatting:"
-Write-Host "     apex"
+Write-Host "${BOLD}其他命令：${NC}"
+Write-Host "  ${INFO}apex --help${NC}           # 查看全部命令"
+Write-Host "  ${INFO}apex config${NC}           # 查看有效配置"
+Write-Host "  ${INFO}apex migrate${NC}          # 迁移配置到当前 schema 版本"
+Write-Host "  ${INFO}apex gateway install${NC}  # 安装网关为系统服务"
 Write-Host ""
-Write-Host "  3. 启动网关（飞书长连接 + 定时任务）/ Start the gateway:"
-Write-Host "     apex gateway run"
-Write-Host ""
-Write-Host "其他命令 / Other commands:"
-Write-Host "  apex --help           # 查看全部命令 / see all commands"
-Write-Host "  apex config           # 查看有效配置 / show effective config"
-Write-Host "  apex migrate          # 迁移配置到当前 schema 版本 / migrate config schema"
-Write-Host "  apex gateway install  # 安装网关为系统服务 / install gateway as a service"
-Write-Host ""
-Write-Color $YELLOW "提示 / Note:"
-Write-Host " 凭据已写入 $ApexEnv（不进 config.yaml），修改后重启 apex 生效。"
+Write-Host "${MUTED}提示：凭据已写入 $ApexEnv（不进 config.yaml），修改后重启 apex 生效。${NC}"
 Write-Host ""

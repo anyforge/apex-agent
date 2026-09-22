@@ -1,29 +1,22 @@
 #!/bin/bash
 # ============================================================================
-# Apex Agent Setup Script
+# Apex Agent Setup Script — 努力向人一样工作 / Work like a human
 # ============================================================================
 # 一键安装脚本：下载源码后运行 `bash install.sh` 即可完成安装 + 交互配置。
 # One-shot installer: clone/download the source, then run `bash install.sh`.
-#
-# 流程 / Flow:
-#   1. 检测 Node.js / npm（>= 22）/ Check Node.js / npm (>= 22)
-#   2. npm install + npm run build（编译到 dist/）/ install deps + build
-#   3. 安装到 ~/.apex-agent/（dist + node_modules + skills + bin）/ install into ~/.apex-agent/
-#   4. symlink apex → ~/.local/bin/apex / symlink the CLI
-#   5. PATH 写入 shell profile（.zshrc / .bashrc）/ add ~/.local/bin to PATH
-#   6. 交互配置：大模型（必填）+ 飞书消息（可选）/ interactive config: model (required) + Feishu (optional)
-#   7. 凭据写 ~/.apex-agent/.env（绝不进 config.yaml）/ credentials → .env (never config.yaml)
-#
-# 风格对齐业界 setup 脚本：分步骤、颜色提示、read -p 交互、完成引导。
 # ============================================================================
 
 set -e
 
-# ---- Colors / 颜色 --------------------------------------------------------
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
+# ---- Colors (RGB truecolor, clack-style) ----------------------------------
+ACCENT='\033[38;2;59;109;245m'        # blue
+ACCENT_BRIGHT='\033[38;2;108;92;231m' # blue-purple
+INFO='\033[38;2;91;140;245m'          # info blue
+SUCCESS='\033[38;2;47;191;113m'       # green
+WARN='\033[38;2;255;176;32m'          # amber
+ERROR='\033[38;2;226;61;45m'          # red
+MUTED='\033[38;2;139;127;119m'        # gray
+BOLD='\033[1m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,80 +26,90 @@ APEX_HOME="$HOME/.apex-agent"
 APEX_ENV="$APEX_HOME/.env"
 LOCAL_BIN="$HOME/.local/bin"
 
-echo ""
-echo -e "${CYAN}⚡ Apex Agent Setup${NC} — 努力向人一样工作 / Work like a human"
-echo ""
+# ---- clack-style intro/step/outro -----------------------------------------
+clack_intro() {
+    echo ""
+    echo -e "${ACCENT}┌${NC}  ${BOLD}$1${NC}"
+    echo -e "${ACCENT}│${NC}"
+}
+clack_step() {
+    echo -e "${ACCENT}│${NC}  $1"
+}
+clack_outro() {
+    echo -e "${ACCENT}│${NC}"
+    echo -e "${ACCENT}└${NC}  $1"
+    echo ""
+}
+
+clack_intro "Apex Agent Installer"
+clack_step "${MUTED}努力向人一样工作 · Work like a human${NC}"
 
 # ============================================================================
-# 1. Node.js / npm check / 检测 Node.js / npm
+# 1. Node.js / npm check
 # ============================================================================
 
-echo -e "${CYAN}→${NC} 检测 Node.js... / Checking Node.js..."
+clack_step "${ACCENT}◆${NC} 检测 Node.js..."
 
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}✗${NC} 未找到 Node.js，请先安装 / Node.js not found. Install it first:"
-    echo "    https://nodejs.org/  (Node.js >= 22)"
-    echo "    或 / or: brew install node"
+    echo -e "${ERROR}◆${NC} 未找到 Node.js，请先安装："
+    echo -e "   ${MUTED}https://nodejs.org/  (Node.js >= 22)${NC}"
+    echo -e "   ${MUTED}或 brew install node${NC}"
     exit 1
 fi
 
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "0")
 if [ "$NODE_MAJOR" -lt 22 ]; then
-    echo -e "${RED}✗${NC} 需要 Node.js >= 22（当前 v$(node -v)）/ Node.js >= 22 required (found v$(node -v))."
-    echo "    node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）。"
+    echo -e "${ERROR}◆${NC} 需要 Node.js >= 22（当前 v$(node -v)）"
+    echo -e "   ${MUTED}node:sqlite 内置模块需要 Node 22+（会话/定时任务/审批/网关账本依赖）${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓${NC} 找到 Node.js $(node -v) / Node.js $(node -v) found"
+clack_step "${SUCCESS}◆${NC} Node.js $(node -v) 已就绪"
 
 if ! command -v npm &> /dev/null; then
-    echo -e "${RED}✗${NC} 未找到 npm（随 Node.js 一起安装）/ npm not found (bundled with Node.js)."
+    echo -e "${ERROR}◆${NC} 未找到 npm（随 Node.js 一起安装）"
     exit 1
 fi
-echo -e "${GREEN}✓${NC} 找到 npm $(npm -v) / npm $(npm -v) found"
+clack_step "${SUCCESS}◆${NC} npm $(npm -v) 已就绪"
 
 # ============================================================================
-# 2. Dependencies + build / 依赖 + 编译
+# 2. Dependencies + build
 # ============================================================================
 
-echo ""
-echo -e "${CYAN}→${NC} 安装依赖... / Installing dependencies..."
-# 成功时完全静默（npm 的 "added N packages" 走 stdout，需一并重定向）；
-# 失败时去掉重定向重跑一次，让真实 npm 报错可见。
-# Quiet on success (npm's summary goes to stdout); re-run WITHOUT redirection on failure.
+clack_step "${ACCENT}◆${NC} 安装依赖..."
+# 成功时完全静默（npm 的 "added N packages" 走 stdout）；失败时重跑显示真实报错。
 if ! npm install --loglevel=error >/dev/null; then
     npm install --loglevel=error
-    echo -e "${RED}✗${NC} 依赖安装失败（见上方 npm 报错）/ Dependency install failed (see npm error above)."
+    echo -e "${ERROR}◆${NC} 依赖安装失败（见上方 npm 报错）"
     exit 1
 fi
-echo -e "${GREEN}✓${NC} 依赖安装完成 / Dependencies installed"
+clack_step "${SUCCESS}◆${NC} 依赖安装完成"
 
-echo -e "${CYAN}→${NC} 编译中（tsc + 提示词资源）... / Building (tsc + prompt assets)..."
+clack_step "${ACCENT}◆${NC} 编译中（tsc + 提示词资源）..."
 if ! npm run build --silent >/dev/null; then
     npm run build --silent
-    echo -e "${RED}✗${NC} 编译失败，可手动运行 'npm run build' 看完整报错 / Build failed. Run 'npm run build' manually."
+    echo -e "${ERROR}◆${NC} 编译失败，可手动运行 'npm run build' 看完整报错"
     exit 1
 fi
-echo -e "${GREEN}✓${NC} 编译完成 / Build complete"
+clack_step "${SUCCESS}◆${NC} 编译完成"
 
 # ============================================================================
-# 3. Install into ~/.apex-agent/ / 安装到 ~/.apex-agent/
+# 3. Install into ~/.apex-agent/
 # ============================================================================
 
-echo ""
-echo -e "${CYAN}→${NC} 安装到 ${APEX_HOME} ... / Installing into ${APEX_HOME} ..."
+clack_step "${ACCENT}◆${NC} 安装到 ${APEX_HOME}..."
 node scripts/install.mjs
 
 # ============================================================================
-# 4. Symlink apex → ~/.local/bin/apex / 软链 CLI
+# 4. Symlink apex → ~/.local/bin/apex
 # ============================================================================
 
-echo -e "${CYAN}→${NC} 设置 apex 命令... / Setting up apex command..."
+clack_step "${ACCENT}◆${NC} 设置 apex 命令..."
 mkdir -p "$LOCAL_BIN"
 ln -sf "$APEX_HOME/app/bin/apex" "$LOCAL_BIN/apex"
-echo -e "${GREEN}✓${NC} 已软链 apex → $LOCAL_BIN/apex / Symlinked apex → $LOCAL_BIN/apex"
+clack_step "${SUCCESS}◆${NC} 已软链 apex → $LOCAL_BIN/apex"
 
 # ============================================================================
-# 5. PATH setup / PATH 设置
+# 5. PATH setup
 # ============================================================================
 
 SHELL_CONFIG=""
@@ -127,72 +130,76 @@ if [ -n "$SHELL_CONFIG" ]; then
         echo "" >> "$SHELL_CONFIG"
         echo "# Apex Agent — ensure ~/.local/bin is on PATH" >> "$SHELL_CONFIG"
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
-        echo -e "${GREEN}✓${NC} 已将 ~/.local/bin 加入 PATH（$SHELL_CONFIG）/ Added ~/.local/bin to PATH in $SHELL_CONFIG"
+        clack_step "${SUCCESS}◆${NC} 已将 ~/.local/bin 加入 PATH（$SHELL_CONFIG）"
     else
-        echo -e "${GREEN}✓${NC} ~/.local/bin 已在 PATH 中 / ~/.local/bin already on PATH"
+        clack_step "${SUCCESS}◆${NC} ~/.local/bin 已在 PATH 中"
     fi
 fi
 
 # ============================================================================
-# 6. Interactive configuration / 交互配置
+# 6. Interactive configuration
 # ============================================================================
 
 APEX_BIN="$APEX_HOME/app/bin/apex"
 mkdir -p "$APEX_HOME"
 
-# ensure .env exists (append-friendly) / 确保 .env 存在（可追加）
+# ensure .env exists (append-friendly)
 [ -f "$APEX_ENV" ] || touch "$APEX_ENV"
 chmod 600 "$APEX_ENV" 2>/dev/null || true
 
 echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  配置大模型 / Configure the model${NC}  ${YELLOW}(必需 / required)${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "  提供者 provider:  openai（OpenAI 兼容，含 DeepSeek/Qwen/GLM 等）| anthropic"
-echo ""
+echo -e "${ACCENT}┌${NC}  ${BOLD}配置大模型${NC}  ${WARN}(必需)${NC}"
+echo -e "${ACCENT}│${NC}"
+echo -e "${ACCENT}│${NC}  ${MUTED}provider: openai（OpenAI 兼容，含 DeepSeek/Qwen/GLM 等）| anthropic${NC}"
+echo -e "${ACCENT}│${NC}"
 
-# --- provider / 提供者 ---
+# --- provider ---
 while true; do
-    read -p "  provider [openai]: " PROVIDER
+    printf "${ACCENT}│${NC}  ${MUTED}provider${NC} [openai]: "
+    read PROVIDER
     PROVIDER="${PROVIDER:-openai}"
     if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "anthropic" ]; then
         break
     fi
-    echo -e "  ${RED}✗${NC} 请输入 openai 或 anthropic / enter openai or anthropic"
+    echo -e "${WARN}│${NC}  请输入 openai 或 anthropic"
 done
 
-# --- name (providerName) / 提供者名称 ---
-read -p "  提供者名称 providerName（用于引用 providers 列表）[default]: " PROVIDER_NAME
+# --- name ---
+printf "${ACCENT}│${NC}  ${MUTED}providerName${NC} [default]: "
+read PROVIDER_NAME
 PROVIDER_NAME="${PROVIDER_NAME:-default}"
 
 # --- baseUrl ---
 if [ "$PROVIDER" = "openai" ]; then
-    read -p "  baseUrl（OpenAI 兼容端点，如 https://api.deepseek.com/v1）: " BASE_URL
+    printf "${ACCENT}│${NC}  ${MUTED}baseUrl${NC}（如 https://api.deepseek.com/v1）: "
+    read BASE_URL
 else
-    read -p "  baseUrl（留空 = 官方端点 / empty = official）: " BASE_URL
+    printf "${ACCENT}│${NC}  ${MUTED}baseUrl${NC}（留空 = 官方端点）: "
+    read BASE_URL
 fi
 
-# --- apiKey / API 密钥 ---
-read -sp "  apiKey（输入不回显 / hidden）: " API_KEY
+# --- apiKey ---
+printf "${ACCENT}│${NC}  ${MUTED}apiKey${NC}（输入不回显）: "
+read -s API_KEY
 echo ""
 if [ -z "$API_KEY" ]; then
-    echo -e "  ${YELLOW}⚠${NC} apiKey 为空，稍后可用环境变量补（OPENAI_API_KEY / ANTHROPIC_API_KEY）"
+    echo -e "${WARN}│${NC}  apiKey 为空，稍后可用环境变量补（OPENAI_API_KEY / ANTHROPIC_API_KEY）"
 fi
 
-# --- model / 模型 ---
+# --- model ---
 if [ "$PROVIDER" = "openai" ]; then
-    read -p "  模型 model [deepseek-chat]: " MODEL
+    printf "${ACCENT}│${NC}  ${MUTED}model${NC} [deepseek-chat]: "
+    read MODEL
     MODEL="${MODEL:-deepseek-chat}"
 else
-    read -p "  模型 model [claude-sonnet-4-5]: " MODEL
+    printf "${ACCENT}│${NC}  ${MUTED}model${NC} [claude-sonnet-4-5]: "
+    read MODEL
     MODEL="${MODEL:-claude-sonnet-4-5}"
 fi
 
-echo ""
-echo -e "${GREEN}✓${NC} 大模型配置完成，正在写入... / Model config done, writing..."
+echo -e "${ACCENT}└${NC}  ${SUCCESS}◆${NC} 模型配置完成，正在写入..."
 
-# write apiKey → .env (credential) / 凭据写 .env
+# write apiKey → .env (credential)
 if [ -n "$API_KEY" ]; then
     if [ "$PROVIDER" = "openai" ]; then
         echo "OPENAI_API_KEY=$API_KEY" >> "$APEX_ENV"
@@ -209,68 +216,70 @@ if [ -n "$BASE_URL" ]; then
     "$APEX_BIN" config set model.baseUrl "$BASE_URL" >/dev/null 2>&1 || true
 fi
 
-echo -e "${GREEN}✓${NC} 模型已配置：$PROVIDER / $MODEL / Model configured: $PROVIDER / $MODEL"
+echo -e "${SUCCESS}◆${NC} 模型已配置：$PROVIDER / $MODEL"
 
 # ============================================================================
-# 7. Feishu messaging (optional) / 飞书消息（可选）
+# 7. Feishu messaging (optional)
 # ============================================================================
 
 echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  配置消息平台 / Configure messaging${NC}  ${YELLOW}(可选 / optional)${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "  当前支持：飞书 Feishu（Lark）机器人 / Currently supports: Feishu (Lark) bot"
-echo ""
+echo -e "${ACCENT}┌${NC}  ${BOLD}配置消息平台${NC}  ${WARN}(可选)${NC}"
+echo -e "${ACCENT}│${NC}"
+echo -e "${ACCENT}│${NC}  ${MUTED}当前支持：飞书 Feishu（Lark）机器人${NC}"
+echo -e "${ACCENT}│${NC}"
 
-read -p "  是否配置飞书消息？/ Configure Feishu? [Y/n] " -n 1 -r
+printf "${ACCENT}│${NC}  是否配置飞书消息？[Y/n] "
+read -n 1 -r REPLY
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-    read -p "  App ID: " FEISHU_APP_ID
-    read -sp "  App Secret（输入不回显 / hidden）: " FEISHU_APP_SECRET
+    printf "${ACCENT}│${NC}  ${MUTED}App ID${NC}: "
+    read FEISHU_APP_ID
+    printf "${ACCENT}│${NC}  ${MUTED}App Secret${NC}（输入不回显）: "
+    read -s FEISHU_APP_SECRET
     echo ""
-    read -p "  domain [feishu]（feishu 国内 | lark 国际）: " FEISHU_DOMAIN
+    printf "${ACCENT}│${NC}  ${MUTED}domain${NC} [feishu]（feishu 国内 | lark 国际）: "
+    read FEISHU_DOMAIN
     FEISHU_DOMAIN="${FEISHU_DOMAIN:-feishu}"
+    echo -e "${ACCENT}└${NC}"
 
     if [ -n "$FEISHU_APP_ID" ] && [ -n "$FEISHU_APP_SECRET" ]; then
         echo "FEISHU_APP_ID=$FEISHU_APP_ID" >> "$APEX_ENV"
         echo "FEISHU_APP_SECRET=$FEISHU_APP_SECRET" >> "$APEX_ENV"
         "$APEX_BIN" config set gateway.feishu.enabled true >/dev/null 2>&1 || true
         "$APEX_BIN" config set gateway.feishu.domain "$FEISHU_DOMAIN" >/dev/null 2>&1 || true
-        echo -e "${GREEN}✓${NC} 飞书已配置（domain=$FEISHU_DOMAIN），凭据写入 .env / Feishu configured, credentials → .env"
+        echo -e "${SUCCESS}◆${NC} 飞书已配置（domain=$FEISHU_DOMAIN），凭据写入 .env"
     else
-        echo -e "${YELLOW}⚠${NC} App ID/Secret 为空，飞书未启用（稍后手动编辑 ~/.apex-agent/.env）/ App ID/Secret empty, Feishu not enabled"
+        echo -e "${WARN}◆${NC} App ID/Secret 为空，飞书未启用（稍后手动编辑 ~/.apex-agent/.env）"
     fi
 else
-    echo -e "${YELLOW}⚠${NC} 跳过飞书配置（稍后可用 'apex config set gateway.feishu.enabled true' 启用）/ Skipped Feishu (enable later via 'apex config set gateway.feishu.enabled true')"
+    echo -e "${ACCENT}└${NC}"
+    echo -e "${WARN}◆${NC} 跳过飞书配置（稍后可用 'apex config set gateway.feishu.enabled true' 启用）"
 fi
 
 # ============================================================================
-# 8. Done / 完成
+# 8. Done
 # ============================================================================
 
-echo ""
-echo -e "${GREEN}✓ 安装完成！/ Setup complete!${NC}"
-echo ""
-echo "下一步 / Next steps:"
+clack_outro "${SUCCESS}◆${NC} 安装完成"
+
+echo -e "${BOLD}下一步：${NC}"
 echo ""
 if [ -n "$SHELL_CONFIG" ]; then
-    echo "  1. 刷新 shell / Reload your shell:"
-    echo "     source $SHELL_CONFIG"
+    echo -e "  ${MUTED}1.${NC} 刷新 shell："
+    echo -e "     ${INFO}source $SHELL_CONFIG${NC}"
     echo ""
 fi
-echo "  2. 开始对话 / Start chatting:"
-echo "     apex"
+echo -e "  ${MUTED}2.${NC} 开始对话："
+echo -e "     ${INFO}apex${NC}"
 echo ""
-echo "  3. 启动网关（飞书长连接 + 定时任务）/ Start the gateway:"
-echo "     apex gateway run"
+echo -e "  ${MUTED}3.${NC} 启动网关（飞书长连接 + 定时任务）："
+echo -e "     ${INFO}apex gateway run${NC}"
 echo ""
-echo "其他命令 / Other commands:"
-echo "  apex --help           # 查看全部命令 / see all commands"
-echo "  apex config           # 查看有效配置 / show effective config"
-echo "  apex migrate          # 迁移配置到当前 schema 版本 / migrate config schema"
-echo "  apex gateway install  # 安装网关为系统服务 / install gateway as a service"
+echo -e "${BOLD}其他命令：${NC}"
+echo -e "  ${INFO}apex --help${NC}           # 查看全部命令"
+echo -e "  ${INFO}apex config${NC}           # 查看有效配置"
+echo -e "  ${INFO}apex migrate${NC}          # 迁移配置到当前 schema 版本"
+echo -e "  ${INFO}apex gateway install${NC}  # 安装网关为系统服务"
 echo ""
-echo -e "${YELLOW}提示 / Note:${NC} 凭据已写入 ~/.apex-agent/.env（不进 config.yaml），"
-echo -e "     修改后直接编辑该文件，重启 apex 生效。"
+echo -e "${MUTED}提示：凭据已写入 ~/.apex-agent/.env（不进 config.yaml），修改后重启 apex 生效。${NC}"
 echo ""
